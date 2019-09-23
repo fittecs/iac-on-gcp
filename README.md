@@ -1,1 +1,0 @@
-# iac-on-gcp
