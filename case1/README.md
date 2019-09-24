@@ -4,10 +4,15 @@
 
 - プロジェクトを手動で作成  
 ここでは`iac-on-gcp-case1-prod`,`iac-on-gcp-case1-stg`という名前のプロジェクトを作成  
-- 課金APIを有効化する  
+- 以下のAPIを有効化する  
+  - 課金
+  - Identity and Access Management (IAM) API
 - Terraform操作用のサービスアカウントを手動で作成  
 ここでは `infra` という名前のアカウントを作成  
-さらにIAMに移動してサービスアカウントをメンバーに追加&`ストレージ -> ストレージ管理者`権限を追加  
+さらにIAMに移動してサービスアカウントをメンバーに追加&以下の権限を追加  
+  - ストレージ -> ストレージ管理者
+  - IAM -> セキュリティ管理者
+  - Service Accounts -> サービスアカウントの管理者
 アカウントの作成が完了したら、JSON鍵を作成。鍵ファイルが自動的にダウンロードされる(以降の説明ではこの鍵を`/path/to/downloaded-keyfile.json`とする)。  
 - 以下のコマンドでローカル上でサービスアカウントをアクティベート  
 ```bash
@@ -50,8 +55,9 @@ $ export GOOGLE_CREDENTIALS=/path/to/downloaded-keyfile.json
 $ terraform init
 $ terraform workspace new stg
 ```
-- TerraformのバケットをTerraform管理下に置くために、バケットの定義ファイルを作成&import  
+- 手動で作成したTerraformのバケットやサービスアカウントをTerraform管理下に置くために、定義ファイルを作成&terraform import  
 ```hcl-terraform
+# storage.tf
 resource "google_storage_bucket" "iac-on-gcp-case1-terraform" {
   name     = "iac-on-gcp-case1-terraform"
   location = "ASIA"
@@ -60,7 +66,14 @@ resource "google_storage_bucket" "iac-on-gcp-case1-terraform" {
     enabled = true
   }
 }
+
+# iam.tf
+resource "google_service_account" "infra" {
+  account_id   = "infra-NNN"
+  display_name = "infra"
+}
 ```
 ```bash
 $ terraform import google_storage_bucket.iac-on-gcp-case1-terraform iac-on-gcp-case1-terraform
+$ terraform import google_service_account.infra infra-NNN@iac-on-gcp-case1-stg-NNN.iam.gserviceaccount.com
 ```
