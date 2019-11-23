@@ -3,7 +3,7 @@
 ## 初期手順
 
 - プロジェクトを手動で作成  
-ここでは`iac-on-gcp-case1-prod`,`iac-on-gcp-case1-stg`という名前のプロジェクトを作成  
+ここでは`iac-on-gcp-case1-prod`,`iac-on-gcp-case1-stg`という名前のプロジェクトを作成し、`iac-on-gcp-case1-stg`を選択
 - 以下のAPIを有効化する  
   - 課金
   - Identity and Access Management (IAM) API
@@ -19,61 +19,110 @@
 # NNNは手順実行環境に依存した値
 $ gcloud auth activate-service-account infra-NNN@iac-on-gcp-case1-stg-NNN.iam.gserviceaccount.com --key-file /path/to/downloaded-keyfile.json
 $ gcloud config set project iac-on-gcp-case1-stg-NNN
+$ gcloud config set compute/region asia-northeast1
+$ gcloud config set compute/zone asia-northeast1-a
 $ gcloud config list
 ```
 - Terraformのtfstateファイルを保存するバケットをGCSに手動で作成  
 ここでは`iac-on-hgcp-case1-terraform`という名前のバケットを作成  
 ```bash
-$ gsutil mb -c multi_regional -l Asia gs://iac-on-gcp-case1-terraform
+$ gsutil mb -c multi_regional -l Asia gs://stg-iac-on-gcp-case1-terraform
 $ gsutil ls gs://
-$ gsutil versioning set on gs://iac-on-gcp-case1-terraform
+$ gsutil versioning set on gs://stg-iac-on-gcp-case1-terraform
 ```
+
+- Terraform用のディレクトリを構成
+```
+- iac-on-gcp
+  |- case1
+    |- terraform
+      |- modules
+      |- stacks
+        |- prod
+        |- stg
+...
+```
+
+
 - 初回起動時に最低限必要なTerraformの定義ファイルを適切なディレクトリ配下に作成
 ```hcl-terraform
-# provider.tf
+# ./terraform/stacks/stg/terraform.tf
+terraform {
+  required_version = "= v0.12.8"
+}
+
+
+# ./terraform/stacks/stg/provider.tf
 provider "google" {
   version = "~> 2.15"
   project = "${var.project}"
-  region = "asia-northeast1"
+  region  = "asia-northeast1"
 }
 
-# backend.tf
+# ./terraform/stacks/stg/backend.tf
 terraform {
   backend "gcs" {
     bucket = "iac-on-gcp-case1-terraform"
   }
 }
 
-# variable.tf
+# ./terraform/stacks/stg/variable.tf
+locals {
+  service = "iac-on-gcp-case1"
+  env     = "stg"
+}
+
 variable "project" {}
 ```
-- Terraformの初期化およびワークスペースの設定  
+- Terraformの初期化
 ```bash
 # NNNは手順実行環境に依存した値
 $ export TF_VAR_project=iac-on-gcp-case1-stg-NNN
 $ export GOOGLE_CREDENTIALS=/path/to/downloaded-keyfile.json
+$ cd /path/to/iac-on-gcp/case1/terraform/stacks/stg
 $ terraform init
-$ terraform workspace new stg
 ```
-- 手動で作成したTerraformのバケットやサービスアカウントをTerraform管理下に置くために、定義ファイルを作成&terraform import  
+- 手動で作成したTerraformのバケットやサービスアカウントをTerraform管理下に置くために、modulesディレクトリと定義ファイルを作成&terraform import  
+```bash
+$ mkdir -p /path/to/iac-on-gcp/case1/terraform/modules/storage/common
+$ mkdir -p /path/to/iac-on-gcp/case1/terraform/modules/iam/common
+```
+
 ```hcl-terraform
-# storage.tf
-resource "google_storage_bucket" "iac-on-gcp-case1-terraform" {
-  name     = "iac-on-gcp-case1-terraform"
-  location = "ASIA"
+# ./modules/storage/terraform-backend/main.tf
+variable "service" {}
+
+variable "env" {}
+
+resource "google_storage_bucket" "terraform-backend" {
+  name          = "${var.env}-${var.service}-terraform"
+  location      = "ASIA"
   storage_class = "MULTI_REGIONAL"
   versioning {
     enabled = true
   }
 }
 
-# iam.tf
+# ./modules/iam/common/main.tf
 resource "google_service_account" "infra" {
   account_id   = "infra-NNN"
   display_name = "infra"
 }
+
+# ./stacks/stg/storage.tf
+module "storage-common" {
+  source  = "../../modules/storage/common"
+  service = "${local.service}"
+  env     = "${local.env}"
+}
+
+# ./stacks/stg/iam.tf
+module "iam-common" {
+  source = "../../modules/iam/common"
+}
 ```
+
 ```bash
-$ terraform import google_storage_bucket.iac-on-gcp-case1-terraform iac-on-gcp-case1-terraform
-$ terraform import google_service_account.infra infra-NNN@iac-on-gcp-case1-stg-NNN.iam.gserviceaccount.com
+$ terraform import module.storage-common.google_storage_bucket.terraform-backend stg-iac-on-gcp-case1-terraform
+$ terraform import module.iam-common.google_service_account.infra infra-NNN@iac-on-gcp-case1-stg-NNN.iam.gserviceaccount.com
 ```
