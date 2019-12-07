@@ -1,0 +1,21 @@
+name: test case1 code
+
+on:
+  push:
+#    paths:
+#      - 'case1/*'
+
+env:
+  DEBUG_WORKFLOW: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Run tests
+      run: |
+        echo "hoge = ${{ NaN == NaN }}"
+        echo "hoge = ${{ 0 == 0 }}"
+
+
